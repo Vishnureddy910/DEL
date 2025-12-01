@@ -1,0 +1,118 @@
+#5a
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+# Data
+X, y = make_classification(1000, 20, n_classes=2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Dropout model
+def dropout_model(rate=0.2):
+    m = Sequential([Dense(64, activation='relu', input_shape=(20,)),
+                    Dropout(rate),
+                    Dense(32, activation='relu'),
+                    Dropout(rate),
+                    Dense(1, activation='sigmoid')])
+    m.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    return m
+
+# Gradient clipping model
+def clip_model(norm=1.0):
+    m = Sequential([Dense(64, activation='relu', input_shape=(20,)),
+                    Dense(32, activation='relu'),
+                    Dense(1, activation='sigmoid')])
+    m.compile(optimizer=Adam(clipnorm=norm),
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+    return m
+
+# Train
+hist_drop = dropout_model().fit(X_train, y_train, epochs=50, batch_size=32,
+                                validation_data=(X_test, y_test), verbose=0)
+hist_clip = clip_model().fit(X_train, y_train, epochs=50, batch_size=32,
+                             validation_data=(X_test, y_test), verbose=0)
+
+# Plot
+plt.plot(hist_drop.history['accuracy'], label='Dropout Train')
+plt.plot(hist_drop.history['val_accuracy'], label='Dropout Val')
+plt.plot(hist_clip.history['accuracy'], '--', label='Clip Train')
+plt.plot(hist_clip.history['val_accuracy'], '--', label='Clip Val')
+plt.title("Training & Validation Accuracy")
+plt.xlabel("Epochs")
+plt.ylabel("Accuracy")
+plt.legend() 
+plt.grid() 
+plt.show()
+
+#5b
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import matplotlib.pyplot as plt
+
+# Load & normalize MNIST
+(x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+x_train, x_test = x_train/255.0, x_test/255.0
+
+# Parity labels
+y_train_p = np.array([sum(map(int, str(y))) % 2 for y in y_train])
+y_test_p  = np.array([sum(map(int, str(y))) % 2 for y in y_test])
+
+# Display sample images
+plt.figure(figsize=(8,8))
+for i in range(25):
+    plt.subplot(5,5,i+1)
+    plt.imshow(x_train[i], cmap='gray')
+    plt.axis('off')
+plt.show()
+
+# Model: digit classification + parity prediction
+inp = keras.Input((28,28))
+x = layers.Flatten()(inp)
+x = layers.Dense(128, activation='relu')(x)
+digit_out  = layers.Dense(10, activation='softmax')(x)
+parity_out = layers.Dense(1,  activation='sigmoid')(x)
+
+model = keras.Model(inp, [digit_out, parity_out])
+model.compile(
+    optimizer='adam',
+    loss=['sparse_categorical_crossentropy', 'binary_crossentropy'],
+    metrics=[['accuracy'], ['accuracy']]
+)
+
+# Early stopping
+es = keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+# Train
+history = model.fit(
+    x_train, [y_train, y_train_p],
+    validation_split=0.2,
+    epochs=20,
+    callbacks=[es]
+)
+
+# Early stopping epoch
+stop_epoch = np.argmin(history.history['val_loss']) + 1
+print("\nEarly stopping occurred at epoch:", stop_epoch)
+
+# ---- FIXED GRAPH (normalized so curves look proper) ----
+train_loss = np.array(history.history['loss'])
+val_loss   = np.array(history.history['val_loss'])
+
+train_norm = (train_loss - train_loss.min()) / (train_loss.max() - train_loss.min())
+val_norm   = (val_loss   - val_loss.min())   / (val_loss.max()   - val_loss.min())
+
+plt.plot(train_norm, label='Train Loss (norm)')
+plt.plot(val_norm,   label='Val Loss (norm)')
+plt.axvline(stop_epoch, color='r', linestyle='--', label='Early Stop')
+plt.xlabel('Epoch'); plt.ylabel('Normalized Loss')
+plt.title('Training vs Validation Loss (Clean Graph)')
+plt.legend()
+plt.show()
